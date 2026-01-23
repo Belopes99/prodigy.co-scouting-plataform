@@ -13,12 +13,6 @@ def get_bq_client(project: Optional[str] = None) -> bigquery.Client:
     Usa 'gcp_service_account' dos secrets do Streamlit se disponível.
     Caso contrário, tenta credenciais padrão (ambiente).
     """
-    # Debug visual para confirmar deploy
-    # st.toast("Versão Debug: Verificando Secrets...", icon="🐞")
-    
-    # Log das chaves disponíveis (Sem revelar valores)
-    print(f"DEBUG: Chaves disponíveis no st.secrets: {list(st.secrets.keys())}")
-
     # 1. Tenta pegar do dicionário 'gcp_service_account' (Estrutura Recomendada)
     if "gcp_service_account" in st.secrets:
         # st.write("✅ Encontrou [gcp_service_account]") # Debug
