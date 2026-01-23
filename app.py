@@ -84,11 +84,11 @@ with nav_col1:
 
 with nav_col2:
     st.markdown("""
-    <div class="nav-card" style="opacity: 0.6; cursor: not-allowed;">
-        <div style="font-size: 3rem; margin-bottom: 10px;">🏃</div>
-        <h3>Análise de Jogador</h3>
-        <p>Em Breve: Radares de percentis, mapas de calor e métricas individuais.</p>
-    </div>
+    <a href="/equipes" target="_self" class="nav-card">
+        <div style="font-size: 3rem; margin-bottom: 10px;">📊</div>
+        <h3>Comparativo de Equipes</h3>
+        <p>Rankings, scatter plots e tabelas de performance (Geral vs Temporada).</p>
+    </a>
     """, unsafe_allow_html=True)
 
 st.divider()
