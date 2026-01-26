@@ -103,7 +103,7 @@ def get_match_stats_query(project_id: str, dataset_id: str) -> str:
         IFNULL(e.total_shots, 0) as total_shots,
         IFNULL(e.shots_on_target, 0) as shots_on_target
     FROM match_teams t
-    LEFT JOIN event_stats e ON t.game_id = e.game_id AND t.team = e.team
+    LEFT JOIN event_stats e ON t.game_id = e.match_id AND t.team = e.team
     """
 
 
