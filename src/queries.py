@@ -324,4 +324,34 @@ def get_player_rankings_query(project_id: str, dataset_id: str) -> str:
     FROM player_stats p
     JOIN match_dates m ON p.game_id = m.game_id
     -- No GROUP BY here, we return raw match rows
+
+
+def get_teams_match_count_query(project_id: str, dataset_id: str) -> str:
+    """
+    Returns total matches per team per season to audit missing data.
+    Expected: 38 matches per completed season.
+    """
+    schedule_union = _build_schedule_union(project_id, dataset_id)
+    return f"""
+    WITH all_schedule AS (
+        {schedule_union}
+    ),
+    
+    matches_per_team AS (
+        -- Unpivot so we have one row per team-match participation
+        SELECT season, home_team as team, game_id FROM all_schedule
+        WHERE home_team IS NOT NULL
+        UNION ALL
+        SELECT season, away_team as team, game_id FROM all_schedule
+        WHERE away_team IS NOT NULL
+    )
+    
+    SELECT 
+        season, 
+        team, 
+        COUNT(DISTINCT game_id) as total_games
+    FROM matches_per_team
+    GROUP BY 1, 2
+    ORDER BY season DESC, total_games ASC
+    """
     """
