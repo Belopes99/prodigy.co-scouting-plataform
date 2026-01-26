@@ -221,24 +221,21 @@ with tab1:
             x=metric_col,
             y="display_name",
             orientation='h',
-            color="pass_pct", # Auxiliary color
+            color=metric_col, # Gradient based on the indicator itself
             color_continuous_scale="Viridis",
             text=metric_col,
-            # Add raw data to tooltip
+            # Add raw data to tooltip (Removing Shots/Passes as requested)
             hover_data={
                 "matches": True,
                 "goals_for": True,
-                "total_shots": True,
                 "display_name": False, # Hide duplicate name
                 metric_col: ":.2f" if normalization_mode == "Por Jogo (Média)" else ":.0f"
             },
             labels={
                 metric_col: metric_label,
                 "display_name": subject[:-1],
-                "pass_pct": "Precisão de Passe (%)",
                 "matches": "Jogos Disputados",
-                "goals_for": "Total de Gols",
-                "total_shots": "Total de Chutes"
+                "goals_for": "Total de Gols"
             }
         )
         
