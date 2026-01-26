@@ -1,5 +1,11 @@
 import streamlit as st
 import pandas as pd
+import sys
+import os
+
+# Add project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from src.bq_io import get_bq_client
 from src.css import load_css
 from src.queries import get_players_by_team_query, get_player_stats_query, get_player_events_query
