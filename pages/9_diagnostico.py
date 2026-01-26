@@ -72,17 +72,50 @@ if sel_season:
 else:
     df_show = df
 
-# Metrics
+# --- METRICS & TABS ---
 c1, c2 = st.columns(2)
 problems = df_show[ (df_show['season'] < 2025) & (df_show['total_games'] != 38) ]
-c1.metric("Registros Analisados", len(df_show))
-c2.metric("Inconsistências Encontradas (< 2025)", len(problems), delta_color="inverse")
+c1.metric("Registros Analisados (Linhas)", len(df_show))
+c2.metric("Inconsistências (Linhas)", len(problems), delta_color="inverse")
 
 if not problems.empty:
-    st.warning(f"⚠️ Atenção! Encontradas {len(problems)} equipes com número de jogos diferente de 38 em temporadas passadas.")
+    st.warning(f"⚠️ Atenção! Encontradas {len(problems)} registros com número de jogos diferente de 38 em temporadas passadas.")
 
-st.dataframe(
-    df_show.style.apply(highlight_rows, axis=1),
-    use_container_width=True,
-    height=800
-)
+tab_detail, tab_macro = st.tabs(["📋 Detalhado (Por Temporada)", "🔎 Visão Macro (Acumulado)"])
+
+with tab_detail:
+    st.dataframe(
+        df_show.style.apply(highlight_rows, axis=1),
+        use_container_width=True,
+        height=800
+    )
+
+with tab_macro:
+    st.markdown("### Total de Jogos por Equipe (Soma das Temporadas Selecionadas)")
+    if not sel_season:
+        st.info("Selecione temporadas acima para visualizar o acumulado.")
+    else:
+        # Aggregation
+        df_macro = df_show.groupby("team")["total_games"].sum().reset_index()
+        df_macro = df_macro.sort_values("total_games", ascending=False)
+        
+        # Calculate Expected Games
+        # Logic: If all selected seasons are COMPLETED (assume < 2025), expected = 38 * count.
+        # If 2025 is in selection, expected varies.
+        # We can just show the number of seasons present for that team.
+        
+        # Count unique seasons per team in the selection
+        seasons_per_team = df_show.groupby("team")["season"].nunique().reset_index(name="num_seasons")
+        df_macro = pd.merge(df_macro, seasons_per_team, on="team")
+        
+        # Display
+        st.dataframe(
+            df_macro,
+            use_container_width=True,
+            column_config={
+                "team": "Equipe",
+                "total_games": "Total de Jogos",
+                "num_seasons": "Temporadas Disputadas (na seleção)"
+            },
+            hide_index=True
+        )
