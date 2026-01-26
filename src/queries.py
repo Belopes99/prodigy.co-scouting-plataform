@@ -2,14 +2,12 @@ from typing import Optional, Tuple
 
 def get_total_matches_query(project_id: str, dataset_id: str) -> str:
     """
-    Retorna query para contar total de partidas únicas.
+    Retorna query para contar total de partidas únicas (usando schedule).
     """
-    # Assumindo que a tabela de eventos é eventos_{ano} e precisamos agregar.
-    # Por enquanto, vamos pegar apenas de 2025 ou fazer um UNION se tiver mais anos.
-    # Para simplificar, vamos contar de 2025.
     return f"""
         SELECT COUNT(DISTINCT game_id) as total
-        FROM `{project_id}.{dataset_id}.eventos_brasileirao_serie_a_2025`
+        FROM `{project_id}.{dataset_id}.schedule_brasileirao_serie_a_2025`
+        WHERE status IS NOT NULL -- Filtro opcional para jogos validos
     """
 
 def get_total_events_query(project_id: str, dataset_id: str) -> str:
@@ -23,18 +21,20 @@ def get_total_events_query(project_id: str, dataset_id: str) -> str:
 
 def get_recent_matches_query(project_id: str, dataset_id: str, limit: int = 5) -> str:
     """
-    Retorna query para as últimas partidas processadas.
+    Retorna query para as últimas partidas processadas (usando schedule).
     """
     return f"""
         SELECT 
-            DISTINCT game_id as match_id,
-            match_date,
+            game_id as match_id,
+            start_time as match_date,
             home_team,
             away_team,
             home_score,
             away_score
-        FROM `{project_id}.{dataset_id}.eventos_brasileirao_serie_a_2025`
-        ORDER BY match_date DESC
+        FROM `{project_id}.{dataset_id}.schedule_brasileirao_serie_a_2025`
+        WHERE status = 2 -- Assuming 2 is 'Finished', or just order by time
+        AND home_score IS NOT NULL
+        ORDER BY start_time DESC
         LIMIT {limit}
     """
 
@@ -44,55 +44,65 @@ def get_match_stats_query(project_id: str, dataset_id: str) -> str:
     Isso serve de base para o Ranking (Geral ou Por Temporada).
     """
     return f"""
-    WITH match_teams AS (
+    WITH match_metadata AS (
         SELECT 
-            game_id as match_id,
+            game_id,
+            start_time as match_date,
+            home_team,
+            away_team,
+            home_score,
+            away_score
+        FROM `{project_id}.{dataset_id}.schedule_brasileirao_serie_a_2025`
+        WHERE home_score IS NOT NULL 
+    ),
+    
+    match_teams AS (
+        SELECT 
+            game_id,
             match_date,
             home_team as team,
             home_score as goals_for,
             away_score as goals_against,
             'Mandante' as side
-        FROM `{project_id}.{dataset_id}.eventos_brasileirao_serie_a_2025`
-        GROUP BY 1,2,3,4,5
+        FROM match_metadata
         
         UNION ALL
         
         SELECT 
-            game_id as match_id,
+            game_id,
             match_date,
             away_team as team,
             away_score as goals_for,
             home_score as goals_against,
             'Visitante' as side
-        FROM `{project_id}.{dataset_id}.eventos_brasileirao_serie_a_2025`
-        GROUP BY 1,2,3,4,5
+        FROM match_metadata
     ),
     
     event_stats AS (
         SELECT
-            game_id as match_id,
+            game_id,
             team,
             COUNTIF(type = 'Pass') as total_passes,
             COUNTIF(type = 'Pass' AND outcome_type = 'Successful') as successful_passes,
             COUNTIF(type IN ('Missed Shots', 'Saved Shot', 'Goal', 'Shot on Post')) as total_shots,
-            COUNTIF(type = 'Goal') as goals_from_events, -- Check consistency with score
+            COUNTIF(type = 'Goal') as goals_from_events,
             COUNTIF(type IN ('Saved Shot', 'Goal', 'Shot on Post')) as shots_on_target
         FROM `{project_id}.{dataset_id}.eventos_brasileirao_serie_a_2025`
         GROUP BY 1, 2
     )
     
     SELECT
-        t.match_id,
+        t.game_id as match_id,
         EXTRACT(YEAR FROM t.match_date) as season,
         t.team,
         t.goals_for,
         t.goals_against,
-        e.total_passes,
-        e.successful_passes,
-        e.total_shots,
-        e.shots_on_target
+        IFNULL(e.total_passes, 0) as total_passes,
+        IFNULL(e.successful_passes, 0) as successful_passes,
+        IFNULL(e.total_shots, 0) as total_shots,
+        IFNULL(e.shots_on_target, 0) as shots_on_target
     FROM match_teams t
-    LEFT JOIN event_stats e ON t.match_id = e.match_id AND t.team = e.team
+    LEFT JOIN event_stats e ON t.game_id = e.game_id AND t.team = e.team
     """
 
 
@@ -111,12 +121,7 @@ def get_players_by_team_query(project_id: str, dataset_id: str, team: str) -> st
 def get_player_stats_query(project_id: str, dataset_id: str, year: int = 2025) -> str:
     """
     Retorna estatísticas AGREGADAS por jogador para radar charts.
-    Normaliza para 'por 90 minutos' se tiver essa info, ou retorna totais.
-    Como schema pode variar, focarei em contagens raw primeiro.
     """
-    # NOTE: Assuming single dataset for now, ignoring 'year' param for table name as 2025 is hardcoded in function names for now.
-    # Ideally should be dynamic.
-    
     return f"""
     SELECT
         player,
