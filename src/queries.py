@@ -362,13 +362,14 @@ def get_player_rankings_query(project_id: str, dataset_id: str) -> str:
     SELECT
         p.player,
         p.team,
+        m.start_time as match_date, -- Granular date for filtering
         EXTRACT(YEAR FROM m.start_time) as season,
-        COUNT(DISTINCT p.game_id) as matches,
-        SUM(p.goals) as goals,
-        SUM(p.shots) as shots,
-        SUM(p.successful_passes) as successful_passes,
-        SUM(p.total_passes) as total_passes
+        p.game_id,
+        p.goals,
+        p.shots,
+        p.successful_passes,
+        p.total_passes
     FROM player_stats p
     JOIN match_dates m ON p.game_id = m.game_id
-    GROUP BY 1, 2, 3
+    -- No GROUP BY here, we return raw match rows
     """
