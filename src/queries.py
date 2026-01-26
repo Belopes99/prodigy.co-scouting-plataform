@@ -253,6 +253,7 @@ def get_match_stats_query(project_id: str, dataset_id: str) -> str:
     
     SELECT
         t.game_id as match_id,
+        t.match_date, -- Needed for Date Range Filter
         EXTRACT(YEAR FROM t.match_date) as season,
         t.team,
         t.goals_for,
