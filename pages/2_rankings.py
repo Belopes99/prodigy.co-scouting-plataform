@@ -31,15 +31,9 @@ with col_filter_2:
     aggregation_mode = st.radio("Agrupamento:", ["Por Temporada", "Histórico"], index=0, horizontal=True)
 
 with col_filter_3:
-    # Date Filter
-    # Determine min/max from cache or default
-    # Note: We load raw data later, but need default dates for UI?
-    # Ideally date filter applies to query. But here we filter dataframe.
-    # We will set a default range.
-    default_end = datetime.now().date()
-    default_start = default_end - timedelta(days=365)
-    
-    date_range = st.date_input("Período:", value=(default_start, default_end), format="DD/MM/YYYY")
+    # Date Filter (Removed duplicate; see below)
+    st.info("Filtro de Periodo carregado dinamicamente abaixo.")
+
 
 with col_filter_4:
     top_n = st.number_input("Top N:", 1, 100, 10)
@@ -64,10 +58,19 @@ with col_c2:
 with col_c3:
     sel_qualifiers = st.multiselect("Qualificadores (Tags)", QUALIFIERS, default=[])
 
+
 with col_c4:
     st.write("") # Spacer
     st.write("")
-    use_related = st.checkbox("Contar Relacionado?", value=False, help="Use para Assistências (Conta quem fez o passe para o Gol)")
+    
+    # Only show "Related" toggle if relevant (Goal)
+    # This prevents confusion.
+    if sel_types and "Goal" in sel_types:
+        use_related = st.checkbox("Rank de Assistências", value=False, help="Marque para contar quem deu o passe (Assistência) ao invés de quem fez o Gol.")
+        if use_related:
+            st.caption("ℹ️ Focando no Jogador Relacionado")
+    else:
+        use_related = False
 
 
 # --- 3. DATA LOADING & UNIFICATION ---
@@ -116,8 +119,11 @@ with col_filter_3:
         min_date = datetime.now().date() - timedelta(days=365)
         max_date = datetime.now().date()
         
+    # Ensure current date_range (if set previously in session state) is valid
+    # But this is a fresh render.
+    
     date_range = st.date_input(
-        "Período:",
+        "Período (Filtro):",
         value=(min_date, max_date),
         format="DD/MM/YYYY"
     )
@@ -236,7 +242,7 @@ base_col = "metric_count"
 type_label = ", ".join(sel_types) if sel_types else "Todos Eventos"
 out_label = f" ({', '.join(sel_outcomes)})" if sel_outcomes else ""
 qual_label = f" [{', '.join(sel_qualifiers)}]" if sel_qualifiers else ""
-rel_label = " (Relacionado)" if use_related else ""
+rel_label = " (Assistências)" if use_related else ""
 
 base_label = f"{type_label}{qual_label}{out_label}{rel_label}"
 if len(base_label) > 50:
