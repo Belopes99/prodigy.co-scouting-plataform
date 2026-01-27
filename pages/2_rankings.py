@@ -44,10 +44,24 @@ with col_filter_4:
     metric_selection = st.selectbox(
         "Métrica:",
         ["Personalizado 🛠️", "Gols", "Assistências", "Passes Decisivos", "Chutes", "Passes Certos", "Desarmes", "Interceptações", "Recuperações", "Faltas"],
-        index=1 # Default Gols
+    index=0 # Default Personalizado
     )
 
-# --- CUSTOM FILTERS (Only if Personalizado) ---
+# --- METRIC PRESETS CONFIGURATION ---
+# Maps specific selection to Dynamic Query parameters
+METRIC_PRESETS = {
+    "Assistências": {"type": "Pass", "outcome": "Sucesso", "qualifier": "Assist"},
+    "Passes Decisivos": {"type": "Pass", "outcome": "Sucesso", "qualifier": "KeyPass"},
+    "Chutes": {"type": "Shot", "outcome": "Todos", "qualifier": ""},
+    "Passes Certos": {"type": "Pass", "outcome": "Sucesso", "qualifier": ""},
+    "Desarmes": {"type": "Tackle", "outcome": "Todos", "qualifier": ""}, # Tackles usually total
+    "Interceptações": {"type": "Interception", "outcome": "Todos", "qualifier": ""},
+    "Recuperações": {"type": "Ball Recovery", "outcome": "Todos", "qualifier": ""},
+    "Faltas": {"type": "Foul", "outcome": "Todos", "qualifier": ""},
+}
+
+
+# --- CUSTOM FILTERS ---
 custom_type = "Todos"
 custom_outcome = "Todos"
 custom_qualifier = ""
@@ -66,7 +80,6 @@ if metric_selection == "Personalizado 🛠️":
         qualifier_opts = ["Todos (Qualquer)", "KeyPass", "Assist", "BigChance", "Head", "Cross", "Corner", "FreeKick", "Penalty", "Throughball", "Longball", "Chipped", "LayOff", "Volley", "OwnGoal"]
         custom_qualifier_sel = st.selectbox("Qualificador", options=qualifier_opts, index=0)
         
-        # Mapping UI selection to query value
         if "Todos" in custom_qualifier_sel:
             custom_qualifier = ""
         else:
@@ -85,11 +98,11 @@ with col_filter_5:
     )
 
 
-# --- 3. DATA LOADING ---
+# --- 3. DATA LOADING & UNIFICATION ---
 PROJECT_ID = "betterbet-467621"
 DATASET_ID = "betterdata"
 
-# Standard Loaders
+# Legacy Standard Loaders (Only for pure Goals/Score if needed)
 @st.cache_data(ttl=3600)
 def load_team_data():
     client = get_bq_client(project=PROJECT_ID)
@@ -119,11 +132,24 @@ def load_dynamic_data(subj, etype, out, qual):
     return df
 
 try:
+    # Determine Query Parameters
+    # 1. Custom
     if metric_selection == "Personalizado 🛠️":
-        # Load specific customized data
-        # Mapping outcome UI to query values
+        q_type = custom_type
+        # Map Outcome UI to Query Value
         out_map = {"Sucesso": "Successful", "Falha": "Unsuccessful", "Todos": "Todos"}
-        df_raw = load_dynamic_data(subject, custom_type, out_map.get(custom_outcome, "Todos"), custom_qualifier)
+        q_outcome = out_map.get(custom_outcome, "Todos")
+        q_qualifier = custom_qualifier
+        
+        df_raw = load_dynamic_data(subject, q_type, q_outcome, q_qualifier)
+        
+    # 2. Preset Metrics (Assistências, etc.) -> Use Dynamic Query too!
+    elif metric_selection in METRIC_PRESETS:
+        preset = METRIC_PRESETS[metric_selection]
+        # Query
+        df_raw = load_dynamic_data(subject, preset["type"], preset["outcome"], preset["qualifier"])
+
+    # 3. Legacy/Standard (Mainly for 'Gols' or fallback)
     else:
         # Load standard pre-aggregated data
         if subject == "Equipes":
@@ -259,6 +285,7 @@ elif subject == "Jogadores":
 
 # 4.3 Metrics Calculation (Per Match)
 # 4.3 Metrics Mapping
+# 4.3 Metrics Mapping
 if metric_selection == "Personalizado 🛠️":
     # Use the dynamic column
     base_col = "metric_count"
@@ -267,20 +294,16 @@ if metric_selection == "Personalizado 🛠️":
         base_label += f" ({custom_qualifier})"
     if custom_outcome != "Todos":
         base_label += f" - {custom_outcome}"
+
+elif metric_selection in METRIC_PRESETS: # Handle Presets (Dynamic)
+    base_col = "metric_count"
+    base_label = metric_selection
+
 else:
-    # Map selection to column
+    # Standard Legacy Mapping (Only Gols really)
     metric_map = {
         "Gols": {"col": "goals_for", "label": "Gols"},
-        "Assistências": {"col": "assists", "label": "Assistências"},
-        "Passes Decisivos": {"col": "key_passes", "label": "Passes Decisivos"},
-        "Chutes": {"col": "total_shots", "label": "Chutes"},
-        "Passes Certos": {"col": "successful_passes", "label": "Passes Certos"},
-        "Desarmes": {"col": "tackles", "label": "Desarmes"},
-        "Interceptações": {"col": "interceptions", "label": "Interceptações"},
-        "Recuperações": {"col": "recoveries", "label": "Recuperações"},
-        "Faltas": {"col": "fouls", "label": "Faltas Cometidas"},
     }
-
     sel_metric = metric_map.get(metric_selection, {"col": "goals_for", "label": "Gols"})
     base_col = sel_metric["col"]
     base_label = sel_metric["label"]
