@@ -640,7 +640,7 @@ st.subheader("Resultados")
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Temporadas", ", ".join(map(str, years_t)))
 k2.metric("Times", ", ".join(teams_t))
-k3.metric("Partidas (universo)", str(len(match_ids_effective)))
+k3.metric("Partidas (c/ filtro)", f"{df_events['match_id'].nunique()} / {len(match_ids_effective)}")
 k4.metric("Eventos retornados", f"{len(df_events):,}".replace(",", "."))
 
 if df_events.empty:
