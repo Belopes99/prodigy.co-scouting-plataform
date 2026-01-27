@@ -146,6 +146,13 @@ with col_filter_3:
         format="DD/MM/YYYY"
     )
 
+# 4.0 Normalize IDs (Critical for Dynamic vs Standard Queries)
+if not df_raw.empty:
+    if "game_id" in df_raw.columns and "match_id" not in df_raw.columns:
+        df_raw["match_id"] = df_raw["game_id"]
+    elif "match_id" in df_raw.columns and "game_id" not in df_raw.columns:
+        df_raw["game_id"] = df_raw["match_id"]
+
 # 4.1 Apply Date Filter
 if isinstance(date_range, tuple) and len(date_range) == 2:
     start_date, end_date = date_range
