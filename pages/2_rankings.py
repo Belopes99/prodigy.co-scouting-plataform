@@ -63,7 +63,14 @@ if metric_selection == "Personalizado 🛠️":
     with row_c2:
         custom_outcome = st.selectbox("Resultado", ["Todos", "Sucesso", "Falha"], index=0)
     with row_c3:
-        custom_qualifier = st.text_input("Qualificador (ex: KeyPass, Head, Cross)", "")
+        qualifier_opts = ["Todos (Qualquer)", "KeyPass", "Assist", "BigChance", "Head", "Cross", "Corner", "FreeKick", "Penalty", "Throughball", "Longball", "Chipped", "LayOff", "Volley", "OwnGoal"]
+        custom_qualifier_sel = st.selectbox("Qualificador", options=qualifier_opts, index=0)
+        
+        # Mapping UI selection to query value
+        if "Todos" in custom_qualifier_sel:
+            custom_qualifier = ""
+        else:
+            custom_qualifier = custom_qualifier_sel
 
 
 with col_filter_5:
