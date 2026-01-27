@@ -209,10 +209,9 @@ def get_match_stats_query(project_id: str, dataset_id: str) -> str:
             COUNTIF(type = 'Foul') as fouls,
             
             -- Qualifiers (String Parsing)
-            -- Data is stored as python dictionary string with single quotes, e.g. [{'displayName': 'Assist'}]
-            -- We escape single quotes in SQL string with ''
-            COUNTIF(qualifiers LIKE '%''displayName'': ''Assist''%') as assists,
-            COUNTIF(qualifiers LIKE '%''displayName'': ''KeyPass''%') as key_passes
+            -- Using REGEX to handle flexible quotes (single or double) and spacing
+            COUNTIF(REGEXP_CONTAINS(qualifiers, r"['\"]displayName['\"]\s*:\s*['\"]Assist['\"]")) as assists,
+            COUNTIF(REGEXP_CONTAINS(qualifiers, r"['\"]displayName['\"]\s*:\s*['\"]KeyPass['\"]")) as key_passes
         FROM all_events
         GROUP BY 1, 2
     )
@@ -335,10 +334,10 @@ def get_player_rankings_query(project_id: str, dataset_id: str) -> str:
             COUNTIF(type = 'Interception') as interceptions,
             COUNTIF(type = 'Ball Recovery') as recoveries,
             COUNTIF(type = 'Clearance') as clearances,
-            COUNTIF(type = 'Foul') as fouls,
+            COUNTIF(top = 'Foul') as fouls, -- Typo in previous context check, assuming 'Foul' is correct column match
             
-            COUNTIF(qualifiers LIKE '%''displayName'': ''Assist''%') as assists,
-            COUNTIF(qualifiers LIKE '%''displayName'': ''KeyPass''%') as key_passes
+            COUNTIF(REGEXP_CONTAINS(qualifiers, r"['\"]displayName['\"]\s*:\s*['\"]Assist['\"]")) as assists,
+            COUNTIF(REGEXP_CONTAINS(qualifiers, r"['\"]displayName['\"]\s*:\s*['\"]KeyPass['\"]")) as key_passes
         FROM all_events
         WHERE player IS NOT NULL
         GROUP BY 1, 2, 3
