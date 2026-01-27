@@ -365,6 +365,87 @@ def get_player_rankings_query(project_id: str, dataset_id: str) -> str:
     """
 
 
+def get_dynamic_ranking_query(
+    project_id: str, 
+    dataset_id: str, 
+    subject: str, # 'Equipes' or 'Jogadores'
+    event_type: str, 
+    outcome: str = "Todos", 
+    qualifier: str = None
+) -> str:
+    """
+    Constructs a specific query based on dynamic user filters.
+    Returns grouping by match_id + subject to allow same downstream processing.
+    """
+    schedule_union = _build_schedule_union(project_id, dataset_id)
+    events_union = _build_events_union(project_id, dataset_id)
+    
+    # Build WHERE clauses
+    where_clauses = ["1=1"] # fallback
+    if event_type and event_type != "Todos":
+        where_clauses.append(f"type = '{event_type}'")
+    
+    if outcome and outcome != "Todos":
+        # Check against outcome_type
+        # Assuming values are 'Successful', 'Unsuccessful' ... user might pass "Sucesso"
+        if outcome in ["Successful", "Unsuccessful"]:
+             where_clauses.append(f"outcome_type = '{outcome}'")
+        elif outcome == "Sucesso":
+             where_clauses.append(f"outcome_type = 'Successful'")
+        elif outcome == "Falha":
+             where_clauses.append(f"outcome_type = 'Unsuccessful'")
+
+    if qualifier:
+        # User flexible LIKE search
+        where_clauses.append(f"qualifiers LIKE '%{qualifier}%'")
+
+    where_str = " AND ".join(where_clauses)
+    
+    # Select columns based on subject
+    if subject == "Jogadores":
+        group_cols = "game_id, player, team"
+        select_cols = "game_id, player, team"
+        join_on = "p.game_id = m.game_id"
+        base_where = "player IS NOT NULL"
+    else:
+        # Equipes
+        group_cols = "game_id, team"
+        select_cols = "game_id, team"
+        join_on = "p.game_id = m.game_id" # Match dates join is same
+        base_where = "team IS NOT NULL"
+
+    return f"""
+    WITH all_schedule AS (
+        {schedule_union}
+    ),
+    all_events AS (
+        {events_union}
+    ),
+    
+    match_dates AS (
+        SELECT game_id, match_date as start_time, season
+        FROM all_schedule
+    ),
+    
+    filtered_events AS (
+        SELECT
+            {select_cols},
+            COUNT(*) as metric_count
+        FROM all_events
+        WHERE {base_where}
+        AND {where_str}
+        GROUP BY {group_cols}
+    )
+    
+    SELECT
+        p.*,
+        m.start_time as match_date,
+        m.season
+    FROM filtered_events p
+    JOIN match_dates m ON {join_on}
+    """
+
+
 def get_teams_match_count_query(project_id: str, dataset_id: str) -> str:
     """
     Returns total matches per team per season to audit missing data.

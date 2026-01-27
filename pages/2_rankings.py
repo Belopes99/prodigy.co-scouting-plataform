@@ -43,9 +43,27 @@ with col_filter_2:
 with col_filter_4:
     metric_selection = st.selectbox(
         "Métrica:",
-        ["Gols", "Assistências", "Passes Decisivos", "Chutes", "Passes Certos", "Desarmes", "Interceptações", "Recuperações", "Faltas"],
-        index=0
+        ["Personalizado 🛠️", "Gols", "Assistências", "Passes Decisivos", "Chutes", "Passes Certos", "Desarmes", "Interceptações", "Recuperações", "Faltas"],
+        index=1 # Default Gols
     )
+
+# --- CUSTOM FILTERS (Only if Personalizado) ---
+custom_type = "Todos"
+custom_outcome = "Todos"
+custom_qualifier = ""
+
+if metric_selection == "Personalizado 🛠️":
+    st.markdown("##### Configurar Métrica Personalizada")
+    row_c1, row_c2, row_c3 = st.columns(3)
+    with row_c1:
+        custom_type = st.selectbox("Tipo de Evento", 
+            ["Pass", "Shot", "Ball Recovery", "Tackle", "Interception", "Foul", "Save", "Goal", "Clearance", "TakeOn", "Aerial"],
+            index=0
+        )
+    with row_c2:
+        custom_outcome = st.selectbox("Resultado", ["Todos", "Sucesso", "Falha"], index=0)
+    with row_c3:
+        custom_qualifier = st.text_input("Qualificador (ex: KeyPass, Head, Cross)", "")
 
 
 with col_filter_5:
@@ -64,12 +82,12 @@ with col_filter_5:
 PROJECT_ID = "betterbet-467621"
 DATASET_ID = "betterdata"
 
+# Standard Loaders
 @st.cache_data(ttl=3600)
 def load_team_data():
     client = get_bq_client(project=PROJECT_ID)
     query = get_match_stats_query(PROJECT_ID, DATASET_ID)
     df = client.query(query).to_dataframe()
-    # Ensure date is datetime
     if "match_date" in df.columns:
         df["match_date"] = pd.to_datetime(df["match_date"]).dt.date
     return df
@@ -79,16 +97,33 @@ def load_player_data():
     client = get_bq_client(project=PROJECT_ID)
     query = get_player_rankings_query(PROJECT_ID, DATASET_ID)
     df = client.query(query).to_dataframe()
-    # Ensure date is datetime
+    if "match_date" in df.columns:
+        df["match_date"] = pd.to_datetime(df["match_date"]).dt.date
+    return df
+
+# Dynamic Loader
+@st.cache_data(ttl=300) # Shorter TTL for dynamic
+def load_dynamic_data(subj, etype, out, qual):
+    client = get_bq_client(project=PROJECT_ID)
+    query = get_dynamic_ranking_query(PROJECT_ID, DATASET_ID, subj, etype, out, qual)
+    df = client.query(query).to_dataframe()
     if "match_date" in df.columns:
         df["match_date"] = pd.to_datetime(df["match_date"]).dt.date
     return df
 
 try:
-    if subject == "Equipes":
-        df_raw = load_team_data()
+    if metric_selection == "Personalizado 🛠️":
+        # Load specific customized data
+        # Mapping outcome UI to query values
+        out_map = {"Sucesso": "Successful", "Falha": "Unsuccessful", "Todos": "Todos"}
+        df_raw = load_dynamic_data(subject, custom_type, out_map.get(custom_outcome, "Todos"), custom_qualifier)
     else:
-        df_raw = load_player_data()
+        # Load standard pre-aggregated data
+        if subject == "Equipes":
+            df_raw = load_team_data()
+        else:
+            df_raw = load_player_data()
+            
 except Exception as e:
     st.error(f"Erro ao carregar dados: {e}")
     st.stop()
@@ -150,7 +185,8 @@ if subject == "Equipes":
         "tackles": "sum", "interceptions": "sum", 
         "recoveries": "sum", "clearances": "sum",
         "saves": "sum", "fouls": "sum",
-        "assists": "sum", "key_passes": "sum"
+        "assists": "sum", "key_passes": "sum",
+        "metric_count": "sum" # For dynamic
     }
     
     # Filter known columns only (safe check)
@@ -182,7 +218,8 @@ elif subject == "Jogadores":
         "successful_passes": "sum", "total_passes": "sum",
         "tackles": "sum", "interceptions": "sum",
         "recoveries": "sum", "clearances": "sum", "fouls": "sum",
-        "assists": "sum", "key_passes": "sum"
+        "assists": "sum", "key_passes": "sum",
+        "metric_count": "sum" # For dynamic
     }
     
     # Filter known columns only (safe check)
@@ -208,22 +245,31 @@ elif subject == "Jogadores":
 
 # 4.3 Metrics Calculation (Per Match)
 # 4.3 Metrics Mapping
-# Map selection to column
-metric_map = {
-    "Gols": {"col": "goals_for", "label": "Gols"},
-    "Assistências": {"col": "assists", "label": "Assistências"},
-    "Passes Decisivos": {"col": "key_passes", "label": "Passes Decisivos"},
-    "Chutes": {"col": "total_shots", "label": "Chutes"},
-    "Passes Certos": {"col": "successful_passes", "label": "Passes Certos"},
-    "Desarmes": {"col": "tackles", "label": "Desarmes"},
-    "Interceptações": {"col": "interceptions", "label": "Interceptações"},
-    "Recuperações": {"col": "recoveries", "label": "Recuperações"},
-    "Faltas": {"col": "fouls", "label": "Faltas Cometidas"},
-}
+if metric_selection == "Personalizado 🛠️":
+    # Use the dynamic column
+    base_col = "metric_count"
+    base_label = f"{custom_type}"
+    if custom_qualifier:
+        base_label += f" ({custom_qualifier})"
+    if custom_outcome != "Todos":
+        base_label += f" - {custom_outcome}"
+else:
+    # Map selection to column
+    metric_map = {
+        "Gols": {"col": "goals_for", "label": "Gols"},
+        "Assistências": {"col": "assists", "label": "Assistências"},
+        "Passes Decisivos": {"col": "key_passes", "label": "Passes Decisivos"},
+        "Chutes": {"col": "total_shots", "label": "Chutes"},
+        "Passes Certos": {"col": "successful_passes", "label": "Passes Certos"},
+        "Desarmes": {"col": "tackles", "label": "Desarmes"},
+        "Interceptações": {"col": "interceptions", "label": "Interceptações"},
+        "Recuperações": {"col": "recoveries", "label": "Recuperações"},
+        "Faltas": {"col": "fouls", "label": "Faltas Cometidas"},
+    }
 
-sel_metric = metric_map.get(metric_selection, {"col": "goals_for", "label": "Gols"})
-base_col = sel_metric["col"]
-base_label = sel_metric["label"]
+    sel_metric = metric_map.get(metric_selection, {"col": "goals_for", "label": "Gols"})
+    base_col = sel_metric["col"]
+    base_label = sel_metric["label"]
 
 # 4.4 Calc P90/Total
 if normalization_mode == "Por Jogo" or normalization_mode == "Por Jogo (Média)": # Handle label change
