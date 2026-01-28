@@ -441,14 +441,8 @@ def get_dynamic_ranking_query(
     
     # 2. Outcome
     if outcomes and "Todos" not in outcomes:
-        # Map generic UI outcomes to DB values if needed
-        # Assuming UI passes direct DB values or mapped ones.
-        # Let's handle the mapping here if lists are mixed?
-        # Simpler: Map before calling, or handle a few keywords.
-        
         target_outcomes = []
         if isinstance(outcomes, str): outcomes = [outcomes]
-        
         for out in outcomes:
             if out == "Sucesso": target_outcomes.append("Successful")
             elif out == "Falha": target_outcomes.append("Unsuccessful")
@@ -461,20 +455,24 @@ def get_dynamic_ranking_query(
     # 3. Qualifiers (Regex OR)
     if qualifiers and "Todos (Qualquer)" not in qualifiers:
         if isinstance(qualifiers, str): qualifiers = [qualifiers]
-        # Build Regex OR: (KeyPass|Assist|Head)
-        # Escape special chars just in case
         safe_quals = [re.escape(q) for q in qualifiers if q]
         if safe_quals:
             pattern = "|".join(safe_quals)
             where_clauses.append(f"REGEXP_CONTAINS(qualifiers, r'{pattern}')")
 
-    # 4. Teams
+    # 4. Teams - Will be handled later via effective_team if needed
+    # But checking input here for variables
+    # If user filters by team, we want to filter on effective_team later.
+    team_in_clause = None
     if teams and "Todos" not in teams:
         if isinstance(teams, list):
              teams_str = "', '".join(teams)
-             where_clauses.append(f"team IN ('{teams_str}')")
+             team_in_clause = f"effective_team IN ('{teams_str}')"
         else:
-             where_clauses.append(f"team = '{teams}'")
+             team_in_clause = f"effective_team = '{teams}'"
+        
+        # We DO NOT add to where_clauses yet because 'team' column checks would be wrong for OGs
+        # where_clauses.append(team_in_clause) <--- We add this to the FINAL Where using effective_team
 
     # 5. Players
     if players and "Todos" not in players:
@@ -485,6 +483,10 @@ def get_dynamic_ranking_query(
              where_clauses.append(f"player = '{players}'")
 
     where_str = " AND ".join(where_clauses)
+    
+    # Add effective_team filter if it exists
+    if team_in_clause:
+        where_str += f" AND {team_in_clause}"
 
     
     # Select columns based on subject
@@ -498,7 +500,7 @@ def get_dynamic_ranking_query(
         group_cols = "game_id, team"
         select_cols = "game_id, team"
         join_on = "p.game_id = m.game_id" # Match dates join is same
-        base_where = "team IS NOT NULL"
+        base_where = "team IS NOT NULL" # We will replace 'team' with 'effective_team'
 
     # Special handling for Assists (Goal Related Player)
     extra_cte = ""
@@ -508,49 +510,96 @@ def get_dynamic_ranking_query(
              SELECT DISTINCT player_id, player FROM all_events WHERE player IS NOT NULL
         )
         """
-        # Override for Assist Logic
+        # Override for Assist Logic (Calculated on RAW events usually, but we should use events_enhanced?)
+        # If we use events_enhanced, we get effective_team.
+        # Ideally yes.
         filtered_events_block = f"""
         filtered_events AS (
             SELECT
                 e.game_id,
                 n.player,
-                e.team,
+                e.team, -- Keep original team for player? Or effective? Usually original.
                 COUNT(*) as metric_count
-            FROM all_events e
+            FROM all_events e -- Use raw events for assists as it's specific logic
             JOIN player_names n ON e.related_player_id = n.player_id
             WHERE 1=1
             AND e.related_player_id IS NOT NULL
-            AND {where_str}
+            AND {where_str.replace('effective_team', 'team')} -- Provide fallback if we use raw events
             GROUP BY 1, 2, 3
         )
         """
     else:
-        # Standard Logic
-        filtered_events_block = f"""
-        filtered_events AS (
-            SELECT
-                {select_cols},
-                COUNT(*) as metric_count
-            FROM all_events
-            WHERE {base_where}
-            AND {where_str}
-            GROUP BY {group_cols}
-        )
-        """
+        # Standard Logic using events_enhanced
+        
+        # Prepare Where Clause for events_enhanced (which has effective_team)
+        # where_str already has effective_team logic if 'teams' filter active.
+        
+        final_where = where_str
+        final_base_where = base_where.replace('team', 'effective_team')
+        
+        # Note: events_enhanced has 'team' (original) and 'effective_team' (beneficiary).
+        
+        target_table = "events_enhanced"
+        
+        # If Subject Equipes, we group by effective_team aliased as team
+        if subject == "Equipes":
+            filtered_events_block = f"""
+            filtered_events AS (
+                SELECT
+                    game_id,
+                    effective_team as team,
+                    COUNT(*) as metric_count
+                FROM {target_table}
+                WHERE {final_base_where}
+                AND {final_where}
+                GROUP BY game_id, effective_team
+            )
+            """
+        else:
+             # Jogadores
+             filtered_events_block = f"""
+            filtered_events AS (
+                SELECT
+                    {select_cols},
+                    COUNT(*) as metric_count
+                FROM {target_table}
+                WHERE {base_where}
+                AND {final_where}
+                GROUP BY {group_cols}
+            )
+            """
 
+    # NOW construct the final query string
     return f"""
     WITH all_schedule AS (
         {schedule_union}
     ),
     all_events AS (
         {events_union}
-    )
-    {extra_cte},
+    ),
     
-    match_dates AS (
-        SELECT game_id, match_date as start_time, season
+    match_metadata AS (
+        SELECT game_id, match_date as start_time, season, home_team, away_team
         FROM all_schedule
     ),
+    
+    events_enhanced AS (
+        SELECT 
+            e.*,
+            -- Calculate Effective Team (Fix for Own Goals)
+            CASE 
+                WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'OwnGoal') THEN
+                    CASE 
+                        WHEN e.team = m.home_team THEN m.away_team 
+                        WHEN e.team = m.away_team THEN m.home_team 
+                        ELSE e.team
+                    END
+                ELSE e.team
+            END as effective_team
+        FROM all_events e
+        JOIN match_metadata m ON e.game_id = m.game_id
+    )
+    {extra_cte},
     
     {filtered_events_block}
     
@@ -559,7 +608,7 @@ def get_dynamic_ranking_query(
         m.start_time as match_date,
         m.season
     FROM filtered_events p
-    JOIN match_dates m ON {join_on}
+    JOIN match_metadata m ON {join_on}
     """
 
 
