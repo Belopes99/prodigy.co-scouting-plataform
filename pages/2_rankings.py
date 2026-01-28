@@ -85,7 +85,27 @@ st.markdown("##### 🛠️ Configurar Filtros")
 # Lists for filtering
 # (Team loader moved to top)
 
-EVENT_TYPES = ["Pass", "Shot", "Ball Recovery", "Tackle", "Interception", "Foul", "Save", "Goal", "Clearance", "TakeOn", "Aerial", "Error", "Challenge", "Dispossessed"]
+EVENT_TYPES = [
+    "Pass", 
+    "Goal", 
+    "SavedShot", 
+    "MissedShots", 
+    "ShotOnPost", 
+    "BallRecovery", 
+    "Tackle", 
+    "Interception", 
+    "Foul", 
+    "Save", 
+    "Clearance", 
+    "TakeOn", 
+    "Aerial", 
+    "Error", 
+    "Challenge", 
+    "Dispossessed",
+    "BlockedPass",
+    "Smother",
+    "KeeperPickup"
+]
 
 OUTCOMES = ["Sucesso", "Falha"]
 QUALIFIERS = ["KeyPass", "Assisted", "BigChanceCreated", "LeadingToGoal", "LeadingToAttempt", "Head", "Cross", "Corner", "FreeKick", "Penalty", "Throughball", "Longball", "Chipped", "LayOff", "Volley", "OwnGoal", "Red", "Yellow"]
