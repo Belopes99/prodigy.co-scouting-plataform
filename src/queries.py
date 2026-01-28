@@ -418,7 +418,8 @@ def get_dynamic_ranking_query(
     outcomes: object = "Todos", # str or list
     qualifiers: object = None, # str or list
     use_related_player: bool = False,
-    teams: object = None # str or list (New Team Filter)
+    teams: object = None, # str or list
+    players: object = None # str or list (New Player Filter)
 ) -> str:
     """
     Constructs a specific query based on dynamic user filters.
@@ -475,8 +476,16 @@ def get_dynamic_ranking_query(
         else:
              where_clauses.append(f"team = '{teams}'")
 
+    # 5. Players
+    if players and "Todos" not in players:
+        if isinstance(players, list):
+             players_str = "', '".join(players)
+             where_clauses.append(f"player IN ('{players_str}')")
+        else:
+             where_clauses.append(f"player = '{players}'")
 
     where_str = " AND ".join(where_clauses)
+
     
     # Select columns based on subject
     if subject == "Jogadores":
@@ -601,3 +610,25 @@ def get_all_teams_query(project_id: str, dataset_id: str) -> str:
     WHERE team IS NOT NULL
     ORDER BY team
     """
+
+def get_all_players_query(project_id: str, dataset_id: str, teams: list = None) -> str:
+    """
+    Get unique list of players, optionally filtered by teams.
+    """
+    events_union = _build_events_union(project_id, dataset_id)
+    
+    where_clause = "player IS NOT NULL"
+    if teams:
+        teams_str = "', '".join(teams)
+        where_clause += f" AND team IN ('{teams_str}')"
+        
+    return f"""
+    WITH all_events AS (
+        {events_union}
+    )
+    SELECT DISTINCT player, team -- Select team too for display if needed, but distinct player name is key
+    FROM all_events
+    WHERE {where_clause}
+    ORDER BY player
+    """
+
