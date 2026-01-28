@@ -421,6 +421,16 @@ with tab1:
     with col_chart_meta:
         st.caption(f"Exibindo **{metric_label}** para top {top_n} itens.")
     
+    # Customization Controls
+    with st.expander("🎨 Personalizar Rótulos (Imagem)", expanded=False):
+        c_cust1, c_cust2, c_cust3 = st.columns(3)
+        with c_cust1:
+            custom_metric_label = st.text_input("Título do Eixo X (Métrica):", value=metric_label)
+        with c_cust2:
+            custom_subject_label = st.text_input("Título do Eixo Y (Participante):", value=subject[:-1])
+        with c_cust3:
+            custom_legend_label = st.text_input("Legenda de Cor/Valor:", value=base_label)
+
     # Check if empty
     if df_sorted.empty:
         st.warning("Sem dados para exibir.")
@@ -441,10 +451,10 @@ with tab1:
                 metric_col: ":.2f" if "Por Jogo" in normalization_mode else ":.0f"
             },
             labels={
-                metric_col: metric_label,
-                "display_name": subject[:-1],
+                metric_col: custom_metric_label,
+                "display_name": custom_subject_label,
                 "matches": "Jogos Disputados",
-                base_col: base_label,
+                base_col: custom_legend_label,
                 "goals_for": "Total de Gols" # Legacy fallback
             }
         )
