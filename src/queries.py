@@ -570,84 +570,10 @@ def get_dynamic_ranking_query(
             )
             """
 
-    # NOW construct the final query string
-        JOIN match_metadata m ON e.game_id = m.game_id
-    )
-    """
-    
-    # LOGIC UPDATE: If perspective is 'against', we flip the attribution.
-    # Standard 'pro' (Own Goals already handled above? No, wait.)
-    # The CTE `events_enhanced` above was just handling Own Goals?
-    # Actually, the CTE inside the f-string is hardcoded in the previous version found in file.
-    # I need to CHANGE the f-string content to be dynamic based on perspective.
-    
-    # Let's redefine the events_enhanced CTE logic DYNAMICALLY.
-    
-    # If Pro:
-    # effective_team = team (unless OwnGoal, then flip).
-    
-    # If Against:
-    # effective_team = The Opponent.
-    # Note: If OwnGoal, "Against" means Conceding Team.
-    # Ex: Team A scores Own Goal. "Pro" for Team A? No, "Pro" for Team B (Beneficiary).
-    # Current OwnGoal logic: WHEN ... THEN (Flip). So it attributes to Beneficiary.
-    # So "Pro" = Beneficiary.
-    # "Against" = Conceding Team.
-    # So "Against" should be the inverse of "Pro".
-    
-    # Let's simplify.
-    # Base effective_team (Pro): The team that "gets the credit".
-    #   - Normal Goal by A -> A.
-    #   - Own Goal by A -> B.
-    #   - Pass by A -> A.
-    
-    # Perspective 'against': We want the team that "suffered".
-    #   - Normal Goal by A -> B suffered.
-    #   - Own Goal by A -> A suffered.
-    #   - Pass by A -> B (technically B is defending).
-    
-    # So if perspective == 'against', we flip the result of the Pro logic.
-    
-    logic_case = """
-            CASE 
-                -- 1. Identify "Credit" Team (Pro Logic)
-                WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'OwnGoal') THEN
-                    CASE 
-                         WHEN e.team = m.home_team THEN m.away_team 
-                         WHEN e.team = m.away_team THEN m.home_team 
-                         ELSE e.team
-                    END
-                ELSE e.team
-            END as pro_team
-    """
-    
-    # Then we wrap it? Or just do it in one go.
-    # Let's do a single CASE based on perspective.
-    
+    # Logic for Effective Team
     if perspective == "against":
-        # We want the OPPONENT of the 'pro_team'.
-        # pro_team is calculated as above.
-        # So we need to flip it.
-        effective_team_calculation = """
+         effective_team_calculation = """
             CASE
-                -- Calculate Pro Team First
-                WHEN (e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'OwnGoal')) THEN e.team -- The one who scored OG suffers it? No.
-                -- Be careful.
-                -- OG by A. Credits B. Sufferer A.
-                -- Normal Goal by A. Credits A. Sufferer B.
-                
-                -- So:
-                -- If OG: Sufferer is e.team (Original).
-                -- If Normal: Sufferer is Opponent of e.team.
-                
-                -- What about other events?
-                -- Pass by A. Sufferer is B (Defending).
-                
-                -- So generally: Sufferer is ALWAYS Opponent of e.team... UNLESS it's an Own Goal?
-                -- Use logic:
-                -- If Own Goal: Sufferer = e.team.
-                -- Else: Sufferer = Opponent(e.team).
-                
                WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'OwnGoal') THEN e.team
                ELSE
                     CASE 
@@ -658,9 +584,6 @@ def get_dynamic_ranking_query(
             END as effective_team
         """
     else:
-        # PRO (Standard)
-        # If OG: Credits Opponent.
-        # Else: Credits e.team.
         effective_team_calculation = """
             CASE 
                 WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'OwnGoal') THEN
