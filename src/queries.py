@@ -1,8 +1,8 @@
 from typing import Optional, Tuple, Union, List
 import re
 
-# YEARS_TO_QUERY = range(2015, 2026)
-YEARS_TO_QUERY = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
+# YEARS_TO_QUERY = range(2015, 2027)
+YEARS_TO_QUERY = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
 
 def _build_schedule_union(project_id: str, dataset_id: str) -> str:
     """
@@ -574,7 +574,8 @@ def get_dynamic_ranking_query(
     if perspective == "against":
          effective_team_calculation = """
             CASE
-               WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'OwnGoal') THEN e.team
+               WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'(?i)OwnGoal') THEN e.team
+
                ELSE
                     CASE 
                         WHEN e.team = m.home_team THEN m.away_team 
@@ -586,7 +587,8 @@ def get_dynamic_ranking_query(
     else:
         effective_team_calculation = """
             CASE 
-                WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'OwnGoal') THEN
+                WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'(?i)OwnGoal') THEN
+
                     CASE 
                         WHEN e.team = m.home_team THEN m.away_team 
                         WHEN e.team = m.away_team THEN m.home_team 
@@ -832,23 +834,50 @@ def get_conversion_ranking_query(
     """
 
 
-def get_teams_match_count_query(project_id: str, dataset_id: str) -> str:
+def get_teams_match_count_query(
+    project_id: str, 
+    dataset_id: str, 
+    teams: object = None, 
+    date_range: tuple = None
+) -> str:
     """
-    Returns total matches per team per season to audit missing data.
-    Expected: 38 matches per completed season.
+    Returns total matches per team in the filtered period.
     """
     schedule_union = _build_schedule_union(project_id, dataset_id)
+    
+    where_clauses = ["1=1"]
+    
+    # Teams Filter
+    if teams and "Todos" not in teams:
+        if isinstance(teams, list):
+             teams_str = "', '".join(teams)
+             where_clauses.append(f"team IN ('{teams_str}')")
+        else:
+             where_clauses.append(f"team = '{teams}'")
+             
+    # Date Filter
+    if date_range:
+        start_date = date_range[0]
+        # Handle tuple of 1 or 2
+        if len(date_range) > 1:
+            end_date = date_range[1]
+            where_clauses.append(f"match_date >= '{start_date}' AND match_date <= '{end_date}'")
+        else:
+             where_clauses.append(f"match_date >= '{start_date}'")
+             
+    final_where = " AND ".join(where_clauses)
+
     return f"""
     WITH all_schedule AS (
         {schedule_union}
     ),
     
     matches_per_team AS (
-        -- Unpivot so we have one row per team-match participation
-        SELECT season, home_team as team, game_id FROM all_schedule
+        -- Unpivot so we have one row per team-match participation with date
+        SELECT season, home_team as team, game_id, match_date, status FROM all_schedule
         WHERE home_team IS NOT NULL
         UNION ALL
-        SELECT season, away_team as team, game_id FROM all_schedule
+        SELECT season, away_team as team, game_id, match_date, status FROM all_schedule
         WHERE away_team IS NOT NULL
     )
     
@@ -857,10 +886,83 @@ def get_teams_match_count_query(project_id: str, dataset_id: str) -> str:
         team, 
         COUNT(DISTINCT game_id) as total_games
     FROM matches_per_team
+    WHERE {final_where}
+    AND (status = 'Finished' OR status = '2') -- Only completed matches
     GROUP BY 1, 2
+
     ORDER BY season DESC, total_games ASC
     """
 
+
+
+
+def get_player_match_counts_query(
+    project_id: str, 
+    dataset_id: str, 
+    teams: object = None, 
+    players: object = None,
+    date_range: tuple = None
+) -> str:
+    """
+    Returns total matches per player (participation) in the filtered period.
+    """
+    events_union = _build_events_union(project_id, dataset_id)
+    schedule_union = _build_schedule_union(project_id, dataset_id)
+    
+    where_clauses = ["player IS NOT NULL"] # Base condition
+    
+    # Teams Filter
+    if teams and "Todos" not in teams:
+        if isinstance(teams, list):
+             teams_str = "', '".join(teams)
+             where_clauses.append(f"team IN ('{teams_str}')")
+        else:
+             where_clauses.append(f"team = '{teams}'")
+
+    # Players Filter
+    if players and "Todos" not in players:
+        if isinstance(players, list):
+             players_str = "', '".join(players)
+             where_clauses.append(f"player IN ('{players_str}')")
+        else:
+             where_clauses.append(f"player = '{players}'")
+             
+    # Date Filter Logic (Needs Join)
+    date_filter = "1=1"
+    if date_range:
+        start_date = date_range[0]
+        if len(date_range) > 1:
+            end_date = date_range[1]
+            date_filter = f"m.match_date >= '{start_date}' AND m.match_date <= '{end_date}'"
+        else:
+             date_filter = f"m.match_date >= '{start_date}'"
+
+    where_str = " AND ".join(where_clauses)
+
+    return f"""
+    WITH all_events AS (
+        {events_union}
+    ),
+    all_schedule AS (
+        {schedule_union}
+    ),
+    match_metadata AS (
+        SELECT game_id, match_date, season FROM all_schedule
+    )
+    
+    SELECT 
+        e.player,
+        e.team,
+        m.season,
+        COUNT(DISTINCT e.game_id) as total_games
+    FROM all_events e
+    JOIN match_metadata m ON e.game_id = m.game_id
+    WHERE {where_str}
+    AND {date_filter}
+    AND (m.status = 'Finished' OR m.status = '2') -- Only completed matches
+    GROUP BY 1, 2, 3
+
+    """
 
 def get_all_teams_query(project_id: str, dataset_id: str) -> str:
     """
@@ -899,5 +1001,80 @@ def get_all_players_query(project_id: str, dataset_id: str, teams: list = None) 
     FROM all_events
     WHERE {where_clause}
     ORDER BY player
+    """
+
+def get_clean_sheets_query(
+    project_id: str, 
+    dataset_id: str, 
+    teams: object = None, 
+    date_range: tuple = None
+) -> str:
+    """
+    Returns query to count Clean Sheets (matches where goals_against == 0).
+    """
+    schedule_union = _build_schedule_union(project_id, dataset_id)
+    
+    where_clauses = ["1=1"] # Base
+    
+    schedule_cte = f"""
+    WITH all_schedule AS (
+        {schedule_union}
+    ),
+    """
+    
+    # Teams
+    teams_filter = ""
+    if teams and "Todos" not in teams:
+        if isinstance(teams, list):
+             teams_str = "', '".join(teams)
+             teams_filter = f"AND team IN ('{teams_str}')"
+        else:
+             teams_filter = f"AND team = '{teams}'"
+             
+    # Date
+    date_filter = ""
+    if date_range:
+        start_date = date_range[0]
+        if len(date_range) > 1:
+            end_date = date_range[1]
+            date_filter = f"AND match_date >= '{start_date}' AND match_date <= '{end_date}'"
+        else:
+             date_filter = f"AND match_date >= '{start_date}'"
+             
+    
+    return f"""
+    {schedule_cte}
+    
+    match_teams AS (
+        SELECT 
+            game_id,
+            match_date,
+            season,
+            home_team as team,
+            IFNULL(away_score, 0) as goals_against
+        FROM all_schedule
+        WHERE home_team IS NOT NULL
+        UNION ALL
+        SELECT 
+            game_id,
+            match_date,
+            season,
+            away_team as team,
+            IFNULL(home_score, 0) as goals_against
+        FROM all_schedule
+        WHERE away_team IS NOT NULL
+    )
+    
+    SELECT
+        team,
+        season,
+        COUNT(*) as clean_sheets
+    FROM match_teams
+    WHERE goals_against = 0
+    {teams_filter}
+    {date_filter}
+    AND match_date IS NOT NULL
+    GROUP BY 1, 2
+    ORDER BY clean_sheets DESC
     """
 

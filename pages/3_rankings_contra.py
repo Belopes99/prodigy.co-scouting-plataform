@@ -11,7 +11,18 @@ from datetime import datetime, timedelta
 
 from src.css import load_css
 from src.bq_io import get_bq_client
-from src.queries import get_match_stats_query, get_player_rankings_query, get_dynamic_ranking_query, get_all_teams_query, get_all_players_query, get_conversion_ranking_query
+from src.queries import (
+    get_match_stats_query, 
+    get_player_rankings_query, 
+    get_dynamic_ranking_query, 
+    get_all_teams_query, 
+    get_all_players_query, 
+    get_conversion_ranking_query,
+    get_teams_match_count_query,
+    get_player_match_counts_query,
+    get_clean_sheets_query
+)
+
 
 
 
@@ -119,14 +130,39 @@ QUALIFIERS = ["KeyPass", "Assisted", "BigChanceCreated", "LeadingToGoal", "Leadi
 if analysis_type == "Volume Total":
     # STANDARD MODE - Single Set of Filters
     
+    # --- PRESET FILTERS ---
+    preset = st.radio(
+        "Presets (Filtros Rápidos):",
+        ["Personalizado", "Gols Sofridos (Geral)", "Bola Parada (Sofridos)", "Clean Sheets (Jogos sem Sofrer Gols)"],
+        index=0,
+        horizontal=True
+    )
+    
     col_c1, col_c2, col_c3, col_c4 = st.columns([1.5, 1.5, 2, 0.5])
     
+    # Defaults based on Preset
+    def_types = ["Goal"]
+    def_out = []
+    def_qual = []
+    
+    if preset == "Gols Sofridos (Geral)":
+        def_types = ["Goal"]
+        def_out = ["Sucesso"] # Implicit for goals usually, but to be safe
+    elif preset == "Bola Parada (Sofridos)":
+        def_types = ["Goal"]
+        def_qual = ["Corner", "FreeKick", "Penalty", "ThrowIn"]
+    elif preset == "Clean Sheets (Jogos sem Sofrer Gols)":
+        # Only relevant for metric change, but filters can reflect "Goals" to show contrast? 
+        # Actually Clean Sheet is 0 Goals.
+        # We can disable filters or just leave them.
+        pass
+
     with col_c1:
-        sel_types = st.multiselect("Tipos de Evento", EVENT_TYPES, default=["Goal"])
+        sel_types = st.multiselect("Tipos de Evento", EVENT_TYPES, default=def_types, disabled=(preset!="Personalizado"))
     with col_c2:
-        sel_outcomes = st.multiselect("Resultados", OUTCOMES, default=[])
+        sel_outcomes = st.multiselect("Resultados", OUTCOMES, default=def_out, disabled=(preset!="Personalizado"))
     with col_c3:
-        sel_qualifiers = st.multiselect("Qualificadores (Tags)", QUALIFIERS, default=[])
+        sel_qualifiers = st.multiselect("Qualificadores (Tags)", QUALIFIERS, default=def_qual, disabled=(preset!="Personalizado"))
 
     with col_c4: 
         st.write("")
@@ -314,8 +350,49 @@ if subject == "Equipes":
     
     df_agg = df_filtered.groupby(groupby_cols).agg(agg_dict_final).reset_index()
         
-    matches = df_filtered.groupby(groupby_cols)["match_id"].nunique().reset_index(name="matches")
-    df_agg = pd.merge(df_agg, matches, on=groupby_cols)
+    df_agg = df_filtered.groupby(groupby_cols).agg(agg_dict_final).reset_index()
+        
+    # --- TRUE MATCH COUNT LOGIC ---
+    # Fetch total matches played by the team (Schedule)
+    matches_query = get_teams_match_count_query(PROJECT_ID, DATASET_ID, q_teams, date_range)
+    df_matches = client.query(matches_query).to_dataframe()
+    
+    join_cols = ["team"]
+    if "season" in groupby_cols:
+        join_cols.append("season")
+        df_agg = pd.merge(df_agg, df_matches, on=join_cols, how="left")
+    else:
+        # Historical Mode: metrics are aggregated by Team. Match data is by Team/Season.
+        if not df_matches.empty:
+            df_matches_grouped = df_matches.groupby("team")["total_games"].sum().reset_index()
+            df_agg = pd.merge(df_agg, df_matches_grouped, on="team", how="left")
+        else:
+             df_agg["total_games"] = 0
+
+    
+    event_matches = df_filtered.groupby(groupby_cols)["match_id"].nunique().reset_index(name="matches_with_event")
+    df_agg = pd.merge(df_agg, event_matches, on=groupby_cols, how="left")
+    
+    df_agg["matches"] = df_agg["total_games"].fillna(df_agg["matches_with_event"])
+
+
+    # --- CLEAN SHEETS LOGIC (Team Only) ---
+    # Fetch Clean Sheets
+    clean_sheets_query = get_clean_sheets_query(PROJECT_ID, DATASET_ID, q_teams, date_range)
+    df_clean_sheets = client.query(clean_sheets_query).to_dataframe()
+    
+    if "season" in groupby_cols:
+        df_agg = pd.merge(df_agg, df_clean_sheets, on=["team", "season"], how="left")
+    else:
+        # Historical
+        if not df_clean_sheets.empty:
+             cs_grouped = df_clean_sheets.groupby("team")["clean_sheets"].sum().reset_index()
+             df_agg = pd.merge(df_agg, cs_grouped, on="team", how="left")
+        else:
+             df_agg["clean_sheets"] = 0
+             
+    df_agg["clean_sheets"] = df_agg["clean_sheets"].fillna(0).astype(int)
+
 
     # Display Name Reconstruction (Robust)
     if "season" in df_agg.columns:
@@ -346,8 +423,27 @@ elif subject == "Jogadores":
     df_agg = df_filtered.groupby(groupby_cols).agg(agg_dict_final).reset_index()
     
     # Count matches: distinct game_id per group
-    matches = df_filtered.groupby(groupby_cols)["game_id"].nunique().reset_index(name="matches")
-    df_agg = pd.merge(df_agg, matches, on=groupby_cols)
+    df_agg = df_filtered.groupby(groupby_cols).agg(agg_dict_final).reset_index()
+    
+    # --- TRUE MATCH COUNT LOGIC (PLAYERS) ---
+    matches_query = get_player_match_counts_query(PROJECT_ID, DATASET_ID, q_teams, q_players, date_range)
+    df_matches = client.query(matches_query).to_dataframe()
+    
+    join_cols = ["player", "team"] 
+    if "season" in groupby_cols:
+        join_cols.append("season")
+        
+    if aggregation_mode == "Histórico":
+        df_matches_grouped = df_matches.groupby("player")["total_games"].sum().reset_index()
+        df_agg = pd.merge(df_agg, df_matches_grouped, on="player", how="left")
+    else:
+        df_agg = pd.merge(df_agg, df_matches, on=join_cols, how="left")
+
+    event_matches = df_filtered.groupby(groupby_cols)["game_id"].nunique().reset_index(name="matches_with_event")
+    df_agg = pd.merge(df_agg, event_matches, on=groupby_cols, how="left")
+    
+    df_agg["matches"] = df_agg["total_games"].fillna(df_agg["matches_with_event"])
+
 
     # Display Name Reconstruction (Robust)
     if "season" in df_agg.columns:
@@ -399,16 +495,35 @@ else:
     if len(base_label) > 50:
         base_label = base_label[:47] + "..."
     
-    if normalization_mode == "Por Jogo":
-        df_agg["display_metric"] = (df_agg[base_col] / df_agg["matches"]).fillna(0)
-        metric_label = f"{base_label} / Jogo"
-        text_format = ".2f"
+    # Override Metric for Clean Sheets Preset
+    if preset == "Clean Sheets (Jogos sem Sofrer Gols)" and "clean_sheets" in df_agg.columns:
+        base_col = "clean_sheets"
+        base_label = "Clean Sheets (Jogos sem Sofrer Gols)"
+        metric_label = base_label # Always Total for CS usually? Or %?
+        
+        if normalization_mode == "Por Jogo":
+             # CS %
+             df_agg["display_metric"] = (df_agg[base_col] / df_agg["matches"]).fillna(0) * 100
+             metric_label = "% Clean Sheets"
+             text_format = ".1f"
+        else:
+             df_agg["display_metric"] = df_agg[base_col]
+             metric_label = "Total Clean Sheets"
+             text_format = ".0f"
+             
+        metric_col = "display_metric"
+        
     else:
-        df_agg["display_metric"] = df_agg[base_col]
-        metric_label = f"Total {base_label}"
-        text_format = ".0f"
-    
-    metric_col = "display_metric"
+        if normalization_mode == "Por Jogo":
+            df_agg["display_metric"] = (df_agg[base_col] / df_agg["matches"]).fillna(0)
+            metric_label = f"{base_label} / Jogo"
+            text_format = ".2f"
+        else:
+            df_agg["display_metric"] = df_agg[base_col]
+            metric_label = f"Total {base_label}"
+            text_format = ".0f"
+        
+        metric_col = "display_metric"
 
 
 # --- 5. VISUALIZATION ---
@@ -456,7 +571,11 @@ with tab1:
             labels={
                 metric_col: custom_metric_label,
                 "display_name": custom_subject_label,
-                "matches": "Jogos Disputados",
+                metric_col: custom_metric_label,
+                "display_name": custom_subject_label,
+                "matches": "Jogos Disputados (Total)",
+                "matches_with_event": "Jogos com o Evento (Sofrido)",
+
                 base_col: custom_legend_label,
                 "goals_for": "Total de Gols" # Legacy fallback
             }

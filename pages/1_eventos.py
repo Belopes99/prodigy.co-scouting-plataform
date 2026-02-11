@@ -483,14 +483,20 @@ load_css() # Re-inject CSS
 
 st.title("Eventos • Análise Interativa")
 
+with st.sidebar:
+    if st.button("🔄 Limpar Cache (Atualizar Dados)"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.rerun()
+
 # --- FILTROS DE DADOS (Topo da página) ---
 c_y, c_t = st.columns([1, 3])
 
 with c_y:
-    all_years = list(range(2015, 2026))
-    years_sel = st.multiselect("Temporada(s)", all_years, default=[2025])
+    all_years = list(range(2015, 2027))
+    years_sel = st.multiselect("Temporada(s)", all_years, default=[2026])
     if not years_sel:
-        years_sel = [2025] # Fallback visual
+        years_sel = [2026] # Fallback visual
     
     # Ordena e converte para tupla para cache
     years_t = tuple(sorted(set(int(y) for y in years_sel)))
