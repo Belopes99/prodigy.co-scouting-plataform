@@ -254,6 +254,10 @@ except Exception as e:
 with col_filter_3:
     # Determine min/max from data for default
     if not df_raw.empty and "match_date" in df_raw.columns:
+        # Ensure datetime
+        if not pd.api.types.is_datetime64_any_dtype(df_raw["match_date"]):
+            df_raw["match_date"] = pd.to_datetime(df_raw["match_date"], errors="coerce")
+            
         min_date = df_raw["match_date"].min()
         max_date = df_raw["match_date"].max()
     else:

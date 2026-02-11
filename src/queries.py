@@ -75,8 +75,8 @@ def _build_schedule_union(project_id: str, dataset_id: str) -> str:
         subqueries.append(f"""
             SELECT 
                 game_id, 
-                {year} as season, -- Hardcoded from table suffix
-                {ts_col} as match_date, 
+                {year} as season, 
+                CAST({ts_col} as TIMESTAMP) as match_date, 
                 home_team, 
                 away_team, 
                 home_score, 
