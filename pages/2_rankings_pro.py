@@ -257,6 +257,9 @@ with col_filter_3:
         # Ensure datetime
         if not pd.api.types.is_datetime64_any_dtype(df_raw["match_date"]):
             df_raw["match_date"] = pd.to_datetime(df_raw["match_date"], errors="coerce")
+        
+        # Normalize to date object (removes time/timezone issues for comparison)
+        df_raw["match_date"] = df_raw["match_date"].dt.date
             
         min_date = df_raw["match_date"].min()
         max_date = df_raw["match_date"].max()
