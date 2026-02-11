@@ -46,6 +46,9 @@ PITCH_WIDTH = 68.0    # metros
 
 
 def fq_table(prefix: str, year: int) -> str:
+    # 2026 Fix for Events table name change (events_ vs eventos_)
+    if year >= 2026 and "eventos" in prefix:
+        prefix = "events_brasileirao_serie_a"
     return f"`{PROJECT}.{DATASET}.{prefix}_{int(year)}`"
 
 
