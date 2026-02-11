@@ -67,7 +67,9 @@ def _build_schedule_union(project_id: str, dataset_id: str) -> str:
     subqueries = []
     for year in YEARS_TO_QUERY:
         # Based on typical Opta/DataProvider schemas:
-        if year >= 2024:
+        # Based on typical Opta/DataProvider schemas:
+        # Adjusted: 2024 often still uses 'date'. 2025+ uses 'start_time'.
+        if year >= 2025:
             ts_col = "start_time"
         else:
             ts_col = "date"
@@ -580,32 +582,19 @@ def get_dynamic_ranking_query(
             """
 
     # Logic for Effective Team
-    if perspective == "against":
-         effective_team_calculation = """
-            CASE
-               WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'(?i)OwnGoal') THEN e.team
-
-               ELSE
-                    CASE 
-                        WHEN e.team = m.home_team THEN m.away_team 
-                        WHEN e.team = m.away_team THEN m.home_team 
-                        ELSE e.team
-                    END
-            END as effective_team
-        """
-    else:
-        effective_team_calculation = """
-            CASE 
-                WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'(?i)OwnGoal') THEN
-
-                    CASE 
-                        WHEN e.team = m.home_team THEN m.away_team 
-                        WHEN e.team = m.away_team THEN m.home_team 
-                        ELSE e.team
-                    END
-                ELSE e.team
-            END as effective_team
-        """
+    # Swaps team if it's an Own Goal so the goal counts for the beneficiary (Opponent of the scorer)
+    # Regex covers "OwnGoal", "Own Goal", "Gol Contra"
+    effective_team_calculation = """
+        CASE 
+            WHEN e.type = 'Goal' AND REGEXP_CONTAINS(e.qualifiers, r'(?i)(Own\s*Goal|Gol\s*Contra)') THEN
+                CASE 
+                    WHEN e.team = m.home_team THEN m.away_team 
+                    WHEN e.team = m.away_team THEN m.home_team 
+                    ELSE e.team
+                END
+            ELSE e.team
+        END as effective_team
+    """
 
     return f"""
     WITH all_schedule AS (
