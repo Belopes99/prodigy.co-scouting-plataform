@@ -89,6 +89,7 @@ def plot_events_plotly(
     color_outcome: bool = False,
     draw_arrows: bool = False,
     highlight_qualifier: Optional[str] = None,
+    highlight_type: Optional[str] = None,
     theme_colors: Optional[dict] = None,
     color_strategy: str = "Resultado (Sucesso/Falha)",
     layer_colors: Optional[dict] = None
@@ -236,7 +237,18 @@ def plot_events_plotly(
             ))
 
     # Logic tree for subsets
-    if highlight_qualifier and "kv_qualifiers" in df.columns:
+    if highlight_type and "type" in df.columns:
+        mask = df["type"] == highlight_type
+        df_h = df[mask]
+        df_o = df[~mask]
+        
+        if not df_o.empty:
+            add_trace(df_o, "Outros", def_color, opacity=0.1, size=6, symbol="circle")
+        if not df_h.empty:
+            # Highlight with Gold Color and slightly larger size, but keep symbol logic
+            add_trace(df_h, highlight_type, hl_color, opacity=1.0, size=10, symbol=None)
+
+    elif highlight_qualifier and "kv_qualifiers" in df.columns:
         mask = df["kv_qualifiers"].apply(lambda x: highlight_qualifier in x)
         df_h = df[mask]
         df_o = df[~mask]

@@ -694,6 +694,11 @@ with g3:
             if highlight_qualifier == "Nenhum":
                 highlight_qualifier = None
 
+    # New Highlight Type
+    highlight_type = st.selectbox("Destacar Tipo (Opcional)", ["Nenhum"] + list(event_types), index=0)
+    if highlight_type == "Nenhum":
+        highlight_type = None
+
 with st.expander("Estilo do mapa (campo)", expanded=False):
     c1s, c2s = st.columns(2)
 
@@ -786,17 +791,24 @@ plot_df = plot_df.dropna(subset=["x", "y"])
 
 if len(plot_df) > int(sample_n):
     # Smart Sampling: Se houver destaque, priorizar esses eventos
-    if highlight_qualifier and "kv_qualifiers" in plot_df.columns:
-        def is_priority(tags):
-            return highlight_qualifier in tags
+    has_hq = highlight_qualifier and "kv_qualifiers" in plot_df.columns
+    has_ht = highlight_type and "type" in plot_df.columns
+
+    if has_hq or has_ht:
+        def is_priority(row):
+            p = False
+            if has_hq: p = p or (highlight_qualifier in row["kv_qualifiers"])
+            if has_ht: p = p or (row["type"] == highlight_type)
+            return p
         
         # Filtra prioritários
-        priority_mask = plot_df["kv_qualifiers"].apply(is_priority)
+        priority_mask = plot_df.apply(is_priority, axis=1)
         priority_df = plot_df[priority_mask]
         background_df = plot_df[~priority_mask]
         
         n_priority = len(priority_df)
         limit = int(sample_n)
+        
         
         if n_priority >= limit:
             # Temos mais destaques que o limite -> amostra dos destaques
@@ -854,6 +866,7 @@ with c_map:
         color_outcome=bool(color_by_outcome),
         draw_arrows=bool(draw_arrows),
         highlight_qualifier=highlight_qualifier,
+        highlight_type=highlight_type, # NEW
         theme_colors=theme_colors,
         color_strategy=color_strategy,
         layer_colors=clean_layer_colors
