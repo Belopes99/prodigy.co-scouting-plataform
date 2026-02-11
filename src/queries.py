@@ -93,13 +93,7 @@ def _build_events_union(project_id: str, dataset_id: str) -> str:
     Required: game_id, team, player, type, outcome_type, is_shot, x, y, end_x, end_y
     """
     # events also need season if we ever query them directly for season stats
-    # 2026 uses 'events_' prefix, others use 'eventos_'
-    subqueries = []
-    for year in YEARS_TO_QUERY:
-        prefix = "events_brasileirao_serie_a" if year >= 2026 else "eventos_brasileirao_serie_a"
-        subqueries.append(f"SELECT *, {year} as season FROM `{project_id}.{dataset_id}.{prefix}_{year}`")
-        
-    return " UNION ALL ".join(subqueries)
+    return " UNION ALL ".join([f"SELECT *, {year} as season FROM `{project_id}.{dataset_id}.eventos_brasileirao_serie_a_{year}`" for year in YEARS_TO_QUERY])
 
 
 def get_total_matches_query(project_id: str, dataset_id: str) -> str:
@@ -279,7 +273,6 @@ def get_players_by_team_query(project_id: str, dataset_id: str, team: str) -> st
 
 def get_player_stats_query(project_id: str, dataset_id: str, year: int = 2026) -> str:
     # Keep using specific year for radar chart for now
-    prefix = "events_brasileirao_serie_a" if year >= 2026 else "eventos_brasileirao_serie_a"
     return f"""
     SELECT
         player,
@@ -296,7 +289,7 @@ def get_player_stats_query(project_id: str, dataset_id: str, year: int = 2026) -
         COUNTIF(type = 'Interception') as interceptions,
         COUNTIF(type = 'Tackle') as tackles
         
-    FROM `{project_id}.{dataset_id}.{prefix}_{year}`
+    FROM `{project_id}.{dataset_id}.eventos_brasileirao_serie_a_{year}`
     WHERE player IS NOT NULL
     GROUP BY 1, 2
     """
