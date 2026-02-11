@@ -859,18 +859,37 @@ c_map, c_stats = st.columns([3, 1])
 
 with c_map:
     # Gera o gráfico
-    fig_plotly = plot_events_plotly(
-        df=plot_df,
-        pitch_length=PITCH_LENGTH,
-        pitch_width=PITCH_WIDTH,
-        color_outcome=bool(color_by_outcome),
-        draw_arrows=bool(draw_arrows),
-        highlight_qualifier=highlight_qualifier,
-        highlight_type=highlight_type, # NEW
-        theme_colors=theme_colors,
-        color_strategy=color_strategy,
-        layer_colors=clean_layer_colors
-    )
+    # Gera o gráfico
+    try:
+        fig_plotly = plot_events_plotly(
+            df=plot_df,
+            pitch_length=PITCH_LENGTH,
+            pitch_width=PITCH_WIDTH,
+            color_outcome=bool(color_by_outcome),
+            draw_arrows=bool(draw_arrows),
+            highlight_qualifier=highlight_qualifier,
+            highlight_type=highlight_type, # NEW
+            theme_colors=theme_colors,
+            color_strategy=color_strategy,
+            layer_colors=clean_layer_colors
+        )
+    except TypeError:
+        # Fallback for stale cache (module not reloaded yet)
+        if highlight_type:
+             st.warning("⚠️ Cache desatualizado: O destaque de Tipo não pôde ser aplicado. Por favor, limpe o cache e recarregue a página (Sidebar > Limpar Cache).")
+        
+        fig_plotly = plot_events_plotly(
+            df=plot_df,
+            pitch_length=PITCH_LENGTH,
+            pitch_width=PITCH_WIDTH,
+            color_outcome=bool(color_by_outcome),
+            draw_arrows=bool(draw_arrows),
+            highlight_qualifier=highlight_qualifier,
+            # highlight_type omitted
+            theme_colors=theme_colors,
+            color_strategy=color_strategy,
+            layer_colors=clean_layer_colors
+        )
     st.plotly_chart(fig_plotly, use_container_width=True, theme=None)
 
 with c_stats:
