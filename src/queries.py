@@ -93,7 +93,16 @@ def _build_events_union(project_id: str, dataset_id: str) -> str:
     Required: game_id, team, player, type, outcome_type, is_shot, x, y, end_x, end_y
     """
     # events also need season if we ever query them directly for season stats
-    return " UNION ALL ".join([f"SELECT *, {year} as season FROM `{project_id}.{dataset_id}.eventos_brasileirao_serie_a_{year}`" for year in YEARS_TO_QUERY])
+    # 2026 table has 30 cols, 2015 has 27. Must select explicit shared columns to avoid UNION ALL error.
+    cols = [
+        "game_id", "team", "player", "player_id", 
+        "type", "outcome_type", "qualifiers", 
+        "expanded_minute", "period", 
+        "x", "y", "end_x", "end_y", 
+        "is_shot", "related_player_id"
+    ]
+    cols_str = ", ".join(cols)
+    return " UNION ALL ".join([f"SELECT {cols_str}, {year} as season FROM `{project_id}.{dataset_id}.eventos_brasileirao_serie_a_{year}`" for year in YEARS_TO_QUERY])
 
 
 def get_total_matches_query(project_id: str, dataset_id: str) -> str:
