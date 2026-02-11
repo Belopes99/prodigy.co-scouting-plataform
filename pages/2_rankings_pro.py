@@ -258,11 +258,18 @@ with col_filter_3:
         if not pd.api.types.is_datetime64_any_dtype(df_raw["match_date"]):
             df_raw["match_date"] = pd.to_datetime(df_raw["match_date"], errors="coerce")
         
+        
         # Normalize to date object (removes time/timezone issues for comparison)
+        # Handle NaT/NaN to avoid float comparison errors
+        df_raw = df_raw.dropna(subset=["match_date"])
         df_raw["match_date"] = df_raw["match_date"].dt.date
             
-        min_date = df_raw["match_date"].min()
-        max_date = df_raw["match_date"].max()
+        if not df_raw.empty:
+            min_date = df_raw["match_date"].min()
+            max_date = df_raw["match_date"].max()
+        else:
+            min_date = datetime.now().date() - timedelta(days=365)
+            max_date = datetime.now().date()
     else:
         # Fallback if empty
         min_date = datetime.now().date() - timedelta(days=365)
