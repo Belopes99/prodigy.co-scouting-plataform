@@ -341,6 +341,8 @@ if subject == "Equipes":
     # matches = df_filtered.groupby(groupby_cols)["match_id"].nunique().reset_index(name="matches")
     # df_agg = pd.merge(df_agg, matches, on=groupby_cols)
 
+    client = get_bq_client(project=PROJECT_ID)
+
     # --- TRUE MATCH COUNT LOGIC ---
     # Fetch total matches played by the team in the filtered period
     matches_query = get_teams_match_count_query(PROJECT_ID, DATASET_ID, q_teams, date_range)
