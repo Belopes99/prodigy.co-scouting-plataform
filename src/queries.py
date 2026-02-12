@@ -605,17 +605,86 @@ def get_dynamic_ranking_query(
     ),
     
     match_metadata AS (
-        SELECT game_id, match_date as start_time, season, home_team, away_team
+        SELECT game_id, match_date as start_time, season, home_team, away_team, home_score, away_score
         FROM all_schedule
+    ),
+    
+    -- Ghost Goal Logic: Inject missing goals found in Schedule but missing in Events
+    existing_goals AS (
+        SELECT game_id, team, count(*) as goals
+        FROM all_events
+        WHERE type = 'Goal'
+        GROUP BY 1, 2
+    ),
+    
+    missing_goals AS (
+        SELECT 
+            m.game_id, 
+            m.season,
+            m.home_team, 
+            m.away_team,
+            (m.home_score - IFNULL(eh.goals, 0)) as home_diff,
+            (m.away_score - IFNULL(ea.goals, 0)) as away_diff
+        FROM match_metadata m
+        LEFT JOIN existing_goals eh ON m.game_id = eh.game_id AND eh.team = m.home_team
+        LEFT JOIN existing_goals ea ON m.game_id = ea.game_id AND ea.team = m.away_team
+        WHERE (m.home_score > IFNULL(eh.goals, 0)) OR (m.away_score > IFNULL(ea.goals, 0))
+    ),
+    
+    ghost_events AS (
+        -- Home Ghosts
+        SELECT 
+            game_id, 
+            home_team as team, 
+            CAST(NULL as STRING) as player, 
+            CAST(NULL as FLOAT64) as player_id,
+            'Goal' as type, 
+            'Successful' as outcome_type, 
+            '[]' as qualifiers,
+            90 as expanded_minute, 
+            'FullTime' as period,
+            50.0 as x, 50.0 as y, 
+            50.0 as end_x, 50.0 as end_y,
+            CAST(NULL as BOOL) as is_shot,
+            CAST(NULL as FLOAT64) as related_player_id,
+            season
+        FROM missing_goals, UNNEST(GENERATE_ARRAY(1, home_diff))
+        WHERE home_diff > 0
+        
+        UNION ALL
+        
+        -- Away Ghosts
+        SELECT 
+            game_id, 
+            away_team as team, 
+             CAST(NULL as STRING) as player, 
+            CAST(NULL as FLOAT64) as player_id,
+            'Goal' as type, 
+            'Successful' as outcome_type, 
+            '[]' as qualifiers,
+            90 as expanded_minute, 
+            'FullTime' as period,
+            50.0 as x, 50.0 as y, 
+            50.0 as end_x, 50.0 as end_y,
+            CAST(NULL as BOOL) as is_shot,
+            CAST(NULL as FLOAT64) as related_player_id,
+            season
+        FROM missing_goals, UNNEST(GENERATE_ARRAY(1, away_diff))
+        WHERE away_diff > 0
+    ),
+    
+    all_events_fixed AS (
+        SELECT * FROM all_events
+        UNION ALL
+        SELECT * FROM ghost_events
     ),
     
     events_enhanced AS (
         SELECT 
             e.*,
             {effective_team_calculation}
-        FROM all_events e
+        FROM all_events_fixed e
         JOIN match_metadata m ON e.game_id = m.game_id
-
     )
     {extra_cte},
     
