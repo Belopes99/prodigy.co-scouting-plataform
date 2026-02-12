@@ -954,7 +954,7 @@ def get_teams_match_count_query(
         COUNT(DISTINCT game_id) as total_games
     FROM matches_per_team
     WHERE {final_where}
-    AND (status = 'Finished' OR status = '2') -- Only completed matches
+    -- AND (status = 'Finished' OR status = '2') -- REMOVING FILTER to allow diagnostic of future matches
     GROUP BY 1, 2
 
     ORDER BY season DESC, total_games ASC
