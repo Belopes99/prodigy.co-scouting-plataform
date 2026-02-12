@@ -91,36 +91,30 @@ with tab_detail:
     )
 
 with tab_macro:
-    st.markdown("### Total de Jogos por Equipe (Soma das Temporadas Selecionadas)")
-    if not sel_season:
-        st.info("Selecione temporadas acima para visualizar o acumulado.")
-    else:
-        # Aggregation
-        df_macro = df_show.groupby("team")["total_games"].sum().reset_index()
-        df_macro = df_macro.sort_values("total_games", ascending=False)
-        
-        # Calculate Expected Games
-        # Logic: If all selected seasons are COMPLETED (assume < 2025), expected = 38 * count.
-        # If 2025 is in selection, expected varies.
-        # We can just show the number of seasons present for that team.
-        
-        # Count unique seasons per team in the selection
-        seasons_per_team = df_show.groupby("team")["season"].nunique().reset_index(name="num_seasons")
-        df_macro = pd.merge(df_macro, seasons_per_team, on="team")
-        
-        # Display
-        st.dataframe(
-            df_macro,
-            use_container_width=True,
-            column_config={
-                "team": "Equipe",
-                "total_games": "Total de Jogos",
-                "num_seasons": "Temporadas Disputadas (na seleção)"
-            },
-            hide_index=True
-            },
-            hide_index=True
-        )
+    try:
+        st.markdown("### Total de Jogos por Equipe (Soma das Temporadas Selecionadas)")
+        if not sel_season:
+            st.info("Selecione temporadas acima para visualizar o acumulado.")
+        else:
+            # Aggregation
+            df_macro = df_show.groupby("team")["total_games"].sum().reset_index()
+            df_macro = df_macro.sort_values("total_games", ascending=False)
+            
+            # Count unique seasons per team in the selection
+            seasons_per_team = df_show.groupby("team")["season"].nunique().reset_index(name="num_seasons")
+            df_macro = pd.merge(df_macro, seasons_per_team, on="team")
+            
+            # Display
+            st.dataframe(
+                df_macro,
+                use_container_width=True,
+                column_config={
+                    "team": "Equipe",
+                    "total_games": "Total de Jogos",
+                    "num_seasons": "Temporadas Disputadas (na seleção)"
+                },
+                hide_index=True
+            )
 
     except Exception as e:
         st.error(f"Erro na inspeção: {e}")
